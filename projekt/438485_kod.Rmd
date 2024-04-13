@@ -1,0 +1,40 @@
+---
+title: "438485_kod"
+author: "Krzysztof Hajderek"
+date: "2024-04-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Wczytujemy dane:
+```{r}
+x_test <- read.csv("X_test.csv")
+x_train <- read.csv("X_train.csv")
+y <- read.csv("y_train.csv")
+y <- y$CD36
+# Czy dokonać jakiejś konwersji?
+```
+
+Rozmiary dancyh sprawdzamy przy pomocy funkcji dim, a typy przy pomocy str:
+```{r}
+print(dim(x_test))
+print(dim(x_train))
+print(dim(y))
+str(x_test)
+str(x_train)
+str(y)
+```
+
+Podstawowe statystyki zmiennej objaśnianej:
+```{r}
+print(var(y))
+```
+
+Estymator gęstości:
+```{r}
+plot(density(y, bw = 'nrd'))
+```
+

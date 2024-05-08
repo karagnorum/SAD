@@ -68,37 +68,79 @@ Zadanie 3.
 b)  Użyjemy 10-fold, aby uzyskać balans między minimalizowaniem wariancji i zwiększaniem elastyczności.
 ```{r}
 library(glmnet)
-x = data.matrix(x_train)
-t = data.matrix(x_test)
+x = data.matrix(x_train[1:100, 1:100])
+t = data.matrix(x_test[1:100,1:100])
+y_ = y[1:100]
 nfolds = 10
 foldid = sample(cut(1:nrow(x), nfolds, labels = F))
-lambdas = seq(from = 0, to = 1.5, by = 0.5)
-models = list()
-res = data.frame()
-alphas = seq(from = 0, to = 1, by = 0.25)
+alphas = seq(from = 0, to = 1, by = 0.5)
+lambdas = seq(from = 0.5, to = 1.5, by = 0.5)
+new_array = function() array(dim = c(length(alphas), length(lambdas), nfolds))
+validation_errors = new_array()
+min_error = Inf
 for (i in 1:length(alphas)){
-  models[[i]] = cv.glmnet(x, y, type.measure = "mse", lambda = lambdas, alpha = alphas[i], foldid = foldid, family = "gaussian")
-  lambda_1se_idx = models[[i]]$index[2]
-  mean_error = models[[i]]$cvm[lambda_1se_idx]
-  temp = data.frame(alpha = alphas[i], error = mean_error)
-  res = rbind(res, temp)
+  for (j in 1:length(lambdas)){
+    test_errors = numeric(nfolds)
+    for (k in 1:nfolds){
+      train = which(foldid != k)
+      model = glmnet(x[train,], y_[train], lambda = lambdas[j], alpha = alphas[i], family = "gaussian")
+      predicted = predict(model, newx = x, type = "response")
+      validation_errors[i, j, k] = mean((predicted[-train,]-y_[-train])^2)
+      train_errors[k] = mean((predicted[train,]-y_[train])^2)
+    }
+    validation_error = mean(validation_errors[i,j,])
+    if (validation_error < min_error){
+        which_alpha_best = i
+        which_lambda_best= j
+        min_error = validation_error
+        train_error = mean(train_errors) #train error in best model
+      }
+  }
 }
-which_model = which.min(res$error)
-best_model = models[[which_model]]
+alphas[which_alpha_best]
+lambdas[which_lambda_best]
 ```
+c)
+```{r}
+library(ggplot2)
+
+alpha = new_array()
+lambda = new_array()
+fold = new_array()
+
+for (i in 1:length(alphas)){
+  for (j in 1:length(lambdas)){
+    for (k in 1:nfolds){
+      alpha[i, j,k] = alphas[i]
+      lambda[i,j,k] = lambdas[j]
+      fold[i, j, k] = k
+    }
+  }
+}
+
+al = as.vector(alpha)
+la = as.vector(lambda)
+params = character(length(al))
+for (i in 1:length(al)){
+  params[i] = paste(al[i], ", ", la[i])
+}
+
+dat = data.frame(
+  parameters = factor(params),
+  fold = as.vector(fold),
+  mse = as.vector(validation_errors))
+
+ggplot(dat, aes(x = parameters, y = mse)) +
+  geom_violin(trim = FALSE) +
+  labs(title = "Mean Squared Errors Across Folds and Hyperparameters",
+       x = "Hyperparameters (Alpha, Lambda)", y = "Mean Squared Error") +
+  theme_minimal()
+```
+
 d)
 ```{r}
-train_errors = numeric(nfolds)
-validation_errors= numeric(nfolds)
-mse = function(m, indices) mean((m[indices,]-y[indices])^2)
-for (i in 1:nfolds){
-  train = which(foldid != i)
-  predicted = predict(best_model, s = "lambda.1se", newx = x)
-  train_errors[i] = mse(predicted, train)
-  validation_errors[i] = mse(predicted, -train)
-}
-mean(train_errors)
-mean(validation_errors)
+train_error
+mean(validation_errors[which_alpha_best, which_lambda_best,])
 ```
 Zadanie 4.
 

@@ -8,7 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
+Zadanie 1.
 Wczytujemy dane:
 ```{r}
 x_test <- read.csv("X_test.csv")
@@ -18,23 +18,87 @@ y <- y$CD36
 # Czy dokonać jakiejś konwersji?
 ```
 
-Rozmiary dancyh sprawdzamy przy pomocy funkcji dim, a typy przy pomocy str:
+Sprawdzamy strukturę danych i czy nie ma braków:
 ```{r}
-print(dim(x_test))
-print(dim(x_train))
-print(dim(y))
+anyNA.data.frame(x_train)
+anyNA.data.frame(x_test)
+anyNA(y)
 str(x_test)
 str(x_train)
 str(y)
 ```
+Widzimy, że nie ma braków.
 
 Podstawowe statystyki zmiennej objaśnianej:
 ```{r}
 print(var(y))
+summary(y)
 ```
 
 Estymator gęstości:
 ```{r}
 plot(density(y, bw = 'nrd'))
 ```
+```{r}
+cor_y = function(x) cor(x, y, method = "pearson")
+cors = apply(x_train, 2, cor_y)
+cors = sort(cors, decreasing = TRUE)
+```
+```{r}
+most_correlated = x_train[names(cors)[1:250]]
+```
+
+Zadanie 2.
+```{r}
+qqnorm(y)
+```
+c) Wybieramy zmienną najbardziej skorelowaną ze zmienną objaśnianą i rysujemy wykres estymatora gęstości.
+```{r}
+chosen_x = x_train[,names(cors)[1]]
+d = density(chosen_x, bw = 'nrd')
+plot(d)
+```
+Dystrybunta empiryczna najbardziej przypomina rozkład normalny. Niech $H_0$: próbka pochodzi z pewnego rozkładu normalnego, $H_1$: $\sim H_0$. Zweryfikujemy hipotezę przy pomocy testu Andersona-Darlinga na poziomie istotności 0.01.
+```{r}
+library(nortest)
+ad.test(chosen_x)
+```
+P - wartość jest poniżej 0.01, więc odrzucamy $H_0$.
+Zadanie 3.
+b)  Użyjemy 10-fold, aby uzyskać balans między minimalizowaniem wariancji i zwiększaniem elastyczności.
+```{r}
+library(glmnet)
+x = data.matrix(x_train)
+t = data.matrix(x_test)
+nfolds = 10
+foldid = sample(cut(1:nrow(x), nfolds, labels = F))
+lambdas = seq(from = 0, to = 1.5, by = 0.5)
+models = list()
+res = data.frame()
+alphas = seq(from = 0, to = 1, by = 0.25)
+for (i in 1:length(alphas)){
+  models[[i]] = cv.glmnet(x, y, type.measure = "mse", lambda = lambdas, alpha = alphas[i], foldid = foldid, family = "gaussian")
+  lambda_1se_idx = models[[i]]$index[2]
+  mean_error = models[[i]]$cvm[lambda_1se_idx]
+  temp = data.frame(alpha = alphas[i], error = mean_error)
+  res = rbind(res, temp)
+}
+which_model = which.min(res$error)
+best_model = models[[which_model]]
+```
+d)
+```{r}
+train_errors = numeric(nfolds)
+validation_errors= numeric(nfolds)
+mse = function(m, indices) mean((m[indices,]-y[indices])^2)
+for (i in 1:nfolds){
+  train = which(foldid != i)
+  predicted = predict(best_model, s = "lambda.1se", newx = x)
+  train_errors[i] = mse(predicted, train)
+  validation_errors[i] = mse(predicted, -train)
+}
+mean(train_errors)
+mean(validation_errors)
+```
+Zadanie 4.
 

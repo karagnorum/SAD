@@ -15,7 +15,6 @@ x_test <- read.csv("X_test.csv")
 x_train <- read.csv("X_train.csv")
 y <- read.csv("y_train.csv")
 y <- y$CD36
-# Czy dokonać jakiejś konwersji?
 ```
 
 Sprawdzamy strukturę danych i czy nie ma braków:
@@ -39,19 +38,40 @@ Estymator gęstości:
 ```{r}
 plot(density(y, bw = 'nrd'))
 ```
+Wybieramy 250 zmiennych objaśniających najbardziej skorelowanych ze zmienną objaśnianą:
 ```{r}
 cor_y = function(x) cor(x, y, method = "pearson")
 cors = apply(x_train, 2, cor_y)
 cors = sort(cors, decreasing = TRUE)
+most_correlated = x_train[,names(cors)[1:250]]
 ```
+Liczymy korelację dla każdej z par tych zmiennych:
 ```{r}
-most_correlated = x_train[names(cors)[1:250]]
+n = ncol(most_correlated)
+correlations = matrix(nrow = n, ncol = n)
+for (i in 1:n){
+  for(j in 1:n){
+    correlations[i, j] = cor(most_correlated[,i], most_correlated[,j], method = "pearson")
+  }
+}
+
+heatmap(correlations, 
+        Rowv = NA, 
+        Colv = NA, 
+        scale = "none",
+        xlab = "Variable",
+        ylab = "Variable",
+        main = "Correlation Heatmap")
 ```
 
+
 Zadanie 2.
+a)
 ```{r}
 qqnorm(y)
+qqline(y, col = "red")
 ```
+Widzimy, że część zmiennych ma wartość blisk
 c) Wybieramy zmienną najbardziej skorelowaną ze zmienną objaśnianą i rysujemy wykres estymatora gęstości.
 ```{r}
 chosen_x = x_train[,names(cors)[1]]
@@ -68,9 +88,8 @@ Zadanie 3.
 b)  Użyjemy 10-fold, aby uzyskać balans między minimalizowaniem wariancji i zwiększaniem elastyczności.
 ```{r}
 library(glmnet)
-x = data.matrix(x_train[1:100, 1:100])
-t = data.matrix(x_test[1:100,1:100])
-y_ = y[1:100]
+x = data.matrix(x_train)
+y_ = y
 nfolds = 10
 foldid = sample(cut(1:nrow(x), nfolds, labels = F))
 alphas = seq(from = 0, to = 1, by = 0.5)
@@ -85,8 +104,8 @@ for (i in 1:length(alphas)){
       train = which(foldid != k)
       model = glmnet(x[train,], y_[train], lambda = lambdas[j], alpha = alphas[i], family = "gaussian")
       predicted = predict(model, newx = x, type = "response")
-      validation_errors[i, j, k] = mean((predicted[-train,]-y_[-train])^2)
-      train_errors[k] = mean((predicted[train,]-y_[train])^2)
+      validation_errors[i, j, k] = mean((predicted[-train]-y_[-train])^2)
+      train_errors[k] = mean((predicted[train]-y_[train])^2)
     }
     validation_error = mean(validation_errors[i,j,])
     if (validation_error < min_error){
@@ -122,16 +141,17 @@ al = as.vector(alpha)
 la = as.vector(lambda)
 params = character(length(al))
 for (i in 1:length(al)){
-  params[i] = paste(al[i], ", ", la[i])
+  params[i] = paste0(al[i], ", ", la[i])
 }
 
 dat = data.frame(
   parameters = factor(params),
-  fold = as.vector(fold),
+  fold = factor(as.vector(fold)),
   mse = as.vector(validation_errors))
 
-ggplot(dat, aes(x = parameters, y = mse)) +
-  geom_violin(trim = FALSE) +
+ggplot(dat) +
+  geom_violin(aes(x = parameters, y = mse), trim = FALSE) +
+  geom_point(aes(x=parameters, y = mse, color = fold)) +
   labs(title = "Mean Squared Errors Across Folds and Hyperparameters",
        x = "Hyperparameters (Alpha, Lambda)", y = "Mean Squared Error") +
   theme_minimal()
@@ -143,4 +163,83 @@ train_error
 mean(validation_errors[which_alpha_best, which_lambda_best,])
 ```
 Zadanie 4.
+a)
+```{r}
+library(randomForest)
+
+p = ncol(x)
+tree_numbers = c(5*p, 10*p)
+m_try = c(floor(p/6), floor(p/3))
+nodesizes = c(5, 10)
+
+new_array2 = function() array(dim = c(2, 2, 2, 10))
+validation_errors_forest = new_array2()
+min_error = Inf
+for (h in 1:length(tree_numbers)){
+  for (i in 1:length(m_try)){
+    for (j in 1:length(nodesizes)){
+      test_errors = numeric(nfolds)
+      for (k in 1:nfolds){
+        train = which(foldid != k)
+        model = randomForest(x[train,], y_[train], ntree = tree_numbers[h], mtry = m_try[i], nodesize = nodesizes[j])
+        predicted = predict(model, x)
+      validation_errors_forest[h,i, j, k] = mean((predicted[-train]-y_[-train])^2)
+      train_errors[k] = mean((predicted[train]-y_[train])^2)
+      }
+      validation_error = mean(validation_errors_forest[h,i,j,])
+      if (validation_error < min_error){
+          opt_params = c(h, i, j)
+          min_error = validation_error
+          train_error_forest = mean(train_errors) #train error in best model
+        }
+    }
+  }
+}
+tree_numbers[opt_params[1]]
+m_try[opt_params[2]]
+nodesizes[opt_params[3]]
+```
+b)
+```{r}
+tree_number = new_array2()
+mt = new_array2()
+nodesize = new_array2()
+
+for (h in 1:length(tree_numbers)){
+  for (i in 1:length(m_try)){
+    for (j in 1:length(nodesizes)){
+      for (k in 1:nfolds){
+        tree_number[h, i, j, k] = tree_numbers[h]
+        mt[h, i, j, k] = m_try[i]
+        nodesize[h, i, j, k] = nodesizes[j]
+      }
+    }
+  }
+}
+
+tree_number = as.vector(tree_number)
+mt = as.vector(mt)
+nodesize = as.vector(nodesize)
+params = character(length(tree_number))
+for (i in 1:length(tree_number)){
+  params[i] = paste0(tree_number[i], ", ", mt[i], ", ", nodesize[i])
+}
+
+dat = data.frame(
+  parameters = factor(params),
+  mse = as.vector(validation_errors_forest))
+
+ggplot(dat) +
+  geom_boxplot(aes(x = parameters, y = mse), outlier.shape = NA) +
+  labs(title = "Mean Squared Errors Across Folds and Hyperparameters",
+       x = "Hyperparameters (Number of trees, tries, minimum nodesize)", y = "Mean Squared Error") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+c)
+```{r}
+train_error_forest
+mean(validation_errors_forest[opt_params[1], opt_params[2], opt_params[3],])
+```
 

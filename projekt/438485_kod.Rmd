@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 Zadanie 1.
 Wczytujemy dane:
-```{r}
+```{r, cache=TRUE}
 x_test <- read.csv("X_test.csv")
 x_train <- read.csv("X_train.csv")
 y <- read.csv("y_train.csv")
@@ -39,7 +39,7 @@ Estymator gęstości:
 plot(density(y, bw = 'nrd'))
 ```
 Wybieramy 250 zmiennych objaśniających najbardziej skorelowanych ze zmienną objaśnianą:
-```{r}
+```{r, cache=TRUE}
 cor_y = function(x) cor(x, y, method = "pearson")
 cors = apply(x_train, 2, cor_y)
 cors = sort(cors, decreasing = TRUE)
@@ -71,7 +71,14 @@ a)
 qqnorm(y)
 qqline(y, col = "red")
 ```
-Widzimy, że część zmiennych ma wartość blisk
+Nie można w prosty sposób odczytać tych parametrów, ponieważ wykres nie jest prostą.
+b)
+Niech $H_0$: próbka pochodzi z pewnego rozkładu normalnego, $H_1$: $\sim H_0$. Zweryfikujemy hipotezę przy pomocy testu Andersona-Darlinga na poziomie istotności 0.01.
+```{r}
+library(nortest)
+ad.test(y)
+```
+P - wartość jest poniżej 0.01, więc odrzucamy $H_0$.
 c) Wybieramy zmienną najbardziej skorelowaną ze zmienną objaśnianą i rysujemy wykres estymatora gęstości.
 ```{r}
 chosen_x = x_train[,names(cors)[1]]
@@ -84,28 +91,66 @@ library(nortest)
 ad.test(chosen_x)
 ```
 P - wartość jest poniżej 0.01, więc odrzucamy $H_0$.
+
 Zadanie 3.
+a)
+ElasticNet to model regresji liniowej, który łączy właściwości regresji grzbietowej (ridge regression) i regresji lasso (Least Absolute Shrinkage and Selection Operator). Jego głównym celem jest jednoczesna selekcja cech oraz regularyzacja modelu, co pozwala na uzyskanie bardziej stabilnych i interpretowalnych wyników w przypadku danych o wysokiej kolinearności.
+
+\section{Model ElasticNet}
+
+\subsection{Optymalizowana funkcja}
+
+Funkcja, którą optymalizuje model ElasticNet, jest zdefiniowana jako:
+
+\[
+\min_{\beta_0, \beta} \left\{ \frac{1}{2N} \sum_{i=1}^{N} (yi - \beta_0 - \mathbf{x}_i^T \beta)^2 + \lambda \left( \alpha \|\beta\|_1 + \frac{1-\alpha}{2} \|\beta\|_2^2 \right) \right\}
+\]
+
+gdzie:
+- \( yi \) to wartości zmiennej objaśnianej,
+- \( \mathbf{x}_i \) to wektor cech dla obserwacji \( i \),
+
+\subsection{Estymowane parametry}
+
+Model ElasticNet estymuje następujące parametry:
+- \(\beta_0\) - wyraz wolny modelu,
+- \(\beta_1, \beta_2, \ldots, \beta_p\) - współczynniki regresji dla każdej z \( p \) cech.
+
+\subsection{Hiperparametry}
+
+ElasticNet posiada dwa hiperparametry:
+- \(\lambda\) - parametr regularyzacji, który decyduje o łącznej sile regularyzacji,
+- \(\alpha\) - parametr mieszania, który kontroluje równowagę między regularyzacją L1 i L2.
+
+\subsubsection{Wartości \(\lambda\) i \(\alpha\)}
+
+Dla różnych wartości hiperparametrów model ElasticNet przyjmuje postać regresji grzbietowej lub lasso:
+- Gdy \(\alpha = 0\), model staje się regresją grzbietową (ridge regression), a 
+- Gdy \(\alpha = 1\), model staje się regresją lasso
+
+\section{Model ElasticNet}
+
 b)  Użyjemy 10-fold, aby uzyskać balans między minimalizowaniem wariancji i zwiększaniem elastyczności.
-```{r}
+```{r elastic, cache=TRUE}
 library(glmnet)
 x = data.matrix(x_train)
-y_ = y
 nfolds = 10
 foldid = sample(cut(1:nrow(x), nfolds, labels = F))
 alphas = seq(from = 0, to = 1, by = 0.5)
 lambdas = seq(from = 0.5, to = 1.5, by = 0.5)
 new_array = function() array(dim = c(length(alphas), length(lambdas), nfolds))
 validation_errors = new_array()
+train_errors = numeric(nfolds)
 min_error = Inf
 for (i in 1:length(alphas)){
   for (j in 1:length(lambdas)){
     test_errors = numeric(nfolds)
     for (k in 1:nfolds){
       train = which(foldid != k)
-      model = glmnet(x[train,], y_[train], lambda = lambdas[j], alpha = alphas[i], family = "gaussian")
+      model = glmnet(x[train,], y[train], lambda = lambdas[j], alpha = alphas[i], family = "gaussian")
       predicted = predict(model, newx = x, type = "response")
-      validation_errors[i, j, k] = mean((predicted[-train]-y_[-train])^2)
-      train_errors[k] = mean((predicted[train]-y_[train])^2)
+      validation_errors[i, j, k] = mean((predicted[-train]-y[-train])^2)
+      train_errors[k] = mean((predicted[train]-y[train])^2)
     }
     validation_error = mean(validation_errors[i,j,])
     if (validation_error < min_error){
@@ -164,12 +209,12 @@ mean(validation_errors[which_alpha_best, which_lambda_best,])
 ```
 Zadanie 4.
 a)
-```{r}
+```{r, cache=TRUE, dependson="elastic"}
 library(randomForest)
 
 p = ncol(x)
-tree_numbers = c(5*p, 10*p)
-m_try = c(floor(p/6), floor(p/3))
+tree_numbers = c(5, 10)
+m_try = c(5, 10)
 nodesizes = c(5, 10)
 
 new_array2 = function() array(dim = c(2, 2, 2, 10))
@@ -181,23 +226,23 @@ for (h in 1:length(tree_numbers)){
       test_errors = numeric(nfolds)
       for (k in 1:nfolds){
         train = which(foldid != k)
-        model = randomForest(x[train,], y_[train], ntree = tree_numbers[h], mtry = m_try[i], nodesize = nodesizes[j])
+        model = randomForest(x[train,], y[train], ntree = tree_numbers[h], mtry = m_try[i], nodesize = nodesizes[j])
         predicted = predict(model, x)
-      validation_errors_forest[h,i, j, k] = mean((predicted[-train]-y_[-train])^2)
-      train_errors[k] = mean((predicted[train]-y_[train])^2)
+        validation_errors_forest[h, i, j, k] = mean((predicted[-train]-y[-train])^2)
+        train_errors[k] = mean((predicted[train]-y[train])^2)
       }
       validation_error = mean(validation_errors_forest[h,i,j,])
       if (validation_error < min_error){
-          opt_params = c(h, i, j)
+          opt_params_forest = c(h, i, j)
           min_error = validation_error
           train_error_forest = mean(train_errors) #train error in best model
         }
     }
   }
 }
-tree_numbers[opt_params[1]]
-m_try[opt_params[2]]
-nodesizes[opt_params[3]]
+tree_numbers[opt_params_forest[1]]
+m_try[opt_params_forest[2]]
+nodesizes[opt_params_forest[3]]
 ```
 b)
 ```{r}
@@ -229,6 +274,7 @@ dat = data.frame(
   parameters = factor(params),
   mse = as.vector(validation_errors_forest))
 
+library(ggplot2)
 ggplot(dat) +
   geom_boxplot(aes(x = parameters, y = mse), outlier.shape = NA) +
   labs(title = "Mean Squared Errors Across Folds and Hyperparameters",
@@ -240,6 +286,39 @@ ggplot(dat) +
 c)
 ```{r}
 train_error_forest
-mean(validation_errors_forest[opt_params[1], opt_params[2], opt_params[3],])
+mean(validation_errors_forest[opt_params_forest[1], opt_params_forest[2], opt_params_forest[3],])
 ```
+
+Zadanie 5.
+
+```{r}
+err_net = validation_errors[which_alpha_best, which_lambda_best,]
+err_forest = validation_errors_forest[opt_params_forest[1], opt_params_forest[2], opt_params_forest[3],]
+err_ref = numeric(nfolds)
+
+for (k in 1:nfolds){
+        train = which(foldid != k)
+        prediction = mean(y[train])
+        err_ref[k] = mean((y[-train] - prediction)^2)
+}
+
+mean_err_net = mean(err_net)
+mean_err_forest = mean(err_forest)
+mean_err_ref = mean(err_ref)
+
+results <- data.frame(
+Fold = 1:10,
+ElasticNet = err_net,
+RandomForest = err_forest,
+ReferenceModel = err_ref
+)
+print(results)
+
+mean_results <- data.frame(
+Model = c("ElasticNet", "Random Forest", "Reference Model"),
+Mean_MSE = c(mean_err_net, mean_err_forest, mean_err_ref)
+)
+print(mean_results)
+```
+
 
